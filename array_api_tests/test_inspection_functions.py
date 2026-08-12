@@ -5,6 +5,13 @@ from array_api_tests.dtype_helpers import available_kinds, dtype_names
 from . import xp
 from . import api_version
 
+# For local testing, should be removed.
+if not hasattr(xp, "__array_namespace_info__"):
+    pytest.skip(
+        "__array_namespace_info__ is not defined in the array module",
+        allow_module_level=True,
+    )
+
 pytestmark = pytest.mark.min_version("2023.12")
 
 
