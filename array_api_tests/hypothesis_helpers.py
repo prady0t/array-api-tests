@@ -93,10 +93,16 @@ def arrays(dtype, *args, elements=None, **kwargs) -> SearchStrategy[Array]:
 
 _dtype_categories = [(xp.bool,), dh.uint_dtypes, dh.int_dtypes, dh.real_float_dtypes, dh.complex_dtypes]
 _sorted_dtypes = [d for category in _dtype_categories for d in category]
+try:
+    _devices = xp.__array_namespace_info__().devices()
+except Exception:
+    # __array_namespace_info__ is not available (e.g. libraries that only
+    # partially implement the standard), fall back to the default device
+    _devices = [None]
 _device_dtype_pairs = [
     (dtype, device)
     for dtype in _sorted_dtypes
-    for device in xp.__array_namespace_info__().devices()
+    for device in _devices
     if dh.is_device_dlpack_compatible(device)
     if dh.is_dtype_device_compatible(dtype, device)
 ]

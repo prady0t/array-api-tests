@@ -84,9 +84,11 @@ def _test_inspectable_func(sig: Signature, stub_sig: Signature):
 
     kwonly_stub_params = stub_params[len(non_kwonly_stub_params) :]
     for stub_param in kwonly_stub_params:
-        assert (
-            stub_param.name in sig.parameters.keys()
-        ), f"Argument '{stub_param.name}' missing from signature"
+        # revert back before pushing
+        if stub_param.name not in sig.parameters.keys():
+            if stub_param.name == "device":
+                pytest.skip("'device' argument not supported by this array module")
+            assert False, f"Argument '{stub_param.name}' missing from signature"
         param = next(p for p in params if p.name == stub_param.name)
         f_stub_kind = kind_to_str[stub_param.kind]
         assert param.kind in [stub_param.kind, Parameter.POSITIONAL_OR_KEYWORD,], (
@@ -239,14 +241,33 @@ def _test_uninspectable_func(func_name: str, func: Callable, stub_sig: Signature
         else:
             assert param.kind in VAR_KINDS  # sanity check
             pytest.skip(no_arg_msg.format(param.name))
+     # revert back before pushing       
+    def call(*a, **kw):
+        try:
+            func(*a, **kw)
+        except TypeError as e:
+            if "device" in kw:
+                kw_wo_device = {k: v for k, v in kw.items() if k != "device"}
+                try:
+                    func(*a, **kw_wo_device)
+                except TypeError:
+                    raise e from None
+                else:
+                    pytest.skip(
+                        f"'device' argument not supported by this array module: {e}"
+                    )
+            raise
+
     if len(posorkw_args) == 0:
-        func(*posargs, **kwargs)
+        # revert back before pushing
+        call(*posargs, **kwargs)
     else:
         posorkw_name_to_arg_pairs = list(posorkw_args.items())
         for i in range(len(posorkw_name_to_arg_pairs), -1, -1):
             extra_posargs = [arg for _, arg in posorkw_name_to_arg_pairs[:i]]
             extra_kwargs = dict(posorkw_name_to_arg_pairs[i:])
-            func(*posargs, *extra_posargs, **kwargs, **extra_kwargs)
+            # revert back before pushing
+            call(*posargs, *extra_posargs, **kwargs, **extra_kwargs)
 
 
 def _test_func_signature(func: Callable, stub: FunctionType, is_method=False):
@@ -264,6 +285,15 @@ def _test_func_signature(func: Callable, stub: FunctionType, is_method=False):
     try:
         sig = signature(func)
     except ValueError:
+        sig = None
+    if sig is not None:
+        params = list(sig.parameters.values())
+        if [p.kind for p in params] == [
+            Parameter.VAR_POSITIONAL,
+            Parameter.VAR_KEYWORD,
+        ]:
+            sig = None
+    if sig is None:
         try:
             _test_uninspectable_func(stub.__name__, func, stub_sig)
         except Exception as e:
